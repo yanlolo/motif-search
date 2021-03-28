@@ -36,6 +36,10 @@ struct Motif {
 	string name, seq;
 	vector<string> eseq;
 	unsigned pos, edist;
+
+	bool operator()(const Motif &X, const Motif &Y) const {
+		return X.pos < Y.pos;
+	}
 };
 
 istream &operator>>(istream &in, Read &r) {
@@ -128,6 +132,27 @@ struct MapStats {
 	unsigned redist;
 };
 
+void map_motifs(vector<Motif> &motifs, Read &r, vector<Motif> &decode_motifs) {
+
+	for (unsigned i = 0; i < motifs.size(); i++) {
+		vector<unsigned> candidates;
+		seed(motifs[i].seq, r, candidates, 2);
+		if (candidates.empty())
+			seed(motifs[i].seq, r, candidates, 1);
+
+		if (!candidates.empty()) {
+			auto[pos, edist] = get_best_match(motifs[i].seq, motifs[i].eseq,
+											  r, candidates);
+			motifs[i].pos = pos;
+			motifs[i].edist = edist;
+
+			Motif &motif = motifs[i];
+			decode_motifs.push_back(motif);
+		}
+
+	}
+}
+
 MapStats map_motifs(vector<Motif> &motifs, Read &r) {
 	unsigned redist = 0;
 	bool all_mapped = true;
@@ -155,6 +180,16 @@ MapStats map_motifs(vector<Motif> &motifs, Read &r) {
 		redist = motifs[0].eseq[0].size() * motifs.size();
 
 	return MapStats{all_mapped, redist};
+}
+
+
+void print_decoded_read(vector<Motif> &motifs, Read &r, ostream &out) {
+
+	out << r.name << "\t";
+	for (Motif &m : motifs) {
+		out << m.name << "," << m.pos << "-";
+	}
+	out << endl;
 }
 
 void print_motifs(vector<Motif> &motifs, ostream &out) {
@@ -187,6 +222,38 @@ void print_per_read_motifs(vector<Motif> &motifs, Read &r, ostream &out) {
 struct ReadStats {
 	int ntotal, nmapped;
 };
+
+ReadStats decode_reads(vector<Motif> &mmotifs, const string &rfname, ostream &out) {
+	ifstream in(rfname);
+	if (!in.is_open()) {
+		cerr << "ERROR: Invalid input file " << rfname << endl;
+		return ReadStats{0, 0};
+	}
+	cerr << "Processing read file " << rfname << endl;
+
+	vector<Read> reads;
+	int ntotal = 0, nmapped = 0;
+	do {
+		Read r{};
+		in >> r;
+		ntotal++;
+
+		//read must be atleast as long as a motif
+		if (r.seq.size() <= mmotifs[0].seq.size())
+			continue;
+
+		index_read(r);
+
+		// find best position for map motifs
+		vector<Motif> decode_motifs;
+		map_motifs(mmotifs, r, decode_motifs);
+		sort(decode_motifs.begin(), decode_motifs.end(), Motif());
+
+		print_decoded_read(decode_motifs, r, out);
+	} while (in);
+
+	return ReadStats{ntotal, nmapped};
+}
 
 ReadStats process_reads(vector<Motif> &mmotifs, vector<Motif> &qmotifs,
 						vector<Motif> &best_mmotifs, Motif &best_qmotif,
@@ -274,7 +341,7 @@ ReadStats process_reads(vector<Motif> &mmotifs, vector<Motif> &qmotifs,
 				//    " with edist " << best_qredist << endl;
 			}
 		}
-		//print_per_read_motifs(motifs, r, out);
+//		print_per_read_motifs(motifs, r, out);
 	} while (in);
 
 	return ReadStats{ntotal, nmapped};
@@ -365,15 +432,15 @@ int main(int argc, char *argv[]) {
 	auto start = chrono::system_clock::now();
 	vector<tuple<string, int, int>> stats;
 	for (const string &rf : vm["read"].as<vector<string>>()) {
-		auto[ntotal, nmapped] = process_reads(mmotifs, qmotifs,
-											  best_mmotifs, best_qmotif,
-											  rf, ofile.is_open() ? ofile : cout);
+		auto[ntotal, nmapped] = decode_reads(mmotifs, rf, ofile.is_open() ? ofile : cout);
+//		auto[ntotal, nmapped] = process_reads(mmotifs, qmotifs,
+//											  best_mmotifs, best_qmotif,
+//											  rf, ofile.is_open() ? ofile : cout);
 		stats.push_back(tuple{rf, ntotal, nmapped});
 	}
 	if (!qmotifs.empty())
 		best_mmotifs.push_back(best_qmotif);
 
-	print_motifs(best_mmotifs, ofile.is_open() ? ofile : cout);
 	if (ofile.is_open())
 		ofile.close();
 
