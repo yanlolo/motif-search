@@ -64,7 +64,7 @@ istream &operator>>(istream &in, Read &r) {
 
 istream &operator>>(istream &in, Motif &m) {
 	if (!getline(in, m.name)) return in;
-	return getline(in, m.seq);
+	return getline(in >> std::ws, m.seq); //remove the whitespace in the beginning of line
 }
 
 void index_read(Read &r) {
