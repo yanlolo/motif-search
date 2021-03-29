@@ -187,7 +187,7 @@ void print_decoded_read(vector<Motif> &motifs, Read &r, ostream &out) {
 
 	out << r.name << "\t";
 	for (Motif &m : motifs) {
-		out << m.name << "," << m.pos << "-";
+		out << m.name << "," << m.pos << "," << m.edist << "-";
 	}
 	out << endl;
 }
