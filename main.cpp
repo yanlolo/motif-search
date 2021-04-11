@@ -1,6 +1,7 @@
 #include <boost/program_options.hpp>
 #include <fstream>
 #include <array>
+#include <map>
 #include "header.h"
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -233,6 +234,15 @@ ReadStats decode_reads(vector<Motif> &mmotifs, const string &rfname, ostream &ou
 
 	vector<Read> reads;
 	int ntotal = 0, nmapped = 0;
+
+	map<string, string> motif_hashmap;
+	unsigned motif_len = mmotifs[2].seq.length(); //the first is ufp/urp, start with third
+	uint32_t motif_mask = (1U << (motif_len * 2)) - 1;
+	for (unsigned i = 0; i < mmotifs.size(); i++){
+		Motif m = mmotifs[i];
+		motif_hashmap[m.seq] = m.name;
+	}
+
 	do {
 		Read r{};
 		in >> r;
@@ -242,14 +252,23 @@ ReadStats decode_reads(vector<Motif> &mmotifs, const string &rfname, ostream &ou
 		if (r.seq.size() <= mmotifs[0].seq.size())
 			continue;
 
-		index_read(r);
+		uint32_t k = 0;
+		unsigned len = r.seq.size();
+		for (unsigned i = 0; i + motif_len < len; i++) {
+			string key = r.seq.substr(i, motif_len);
+			auto exact_match = motif_hashmap.find(key);
+			cout << exact_match->first << ", " << exact_match->second << endl;
+		}
 
-		// find best position for map motifs
-		vector<Motif> decode_motifs;
-		map_motifs(mmotifs, r, decode_motifs);
-		sort(decode_motifs.begin(), decode_motifs.end(), Motif());
 
-		print_decoded_read(decode_motifs, r, out);
+//		index_read(r);
+//
+//		// find best position for map motifs
+//		vector<Motif> decode_motifs;
+//		map_motifs(mmotifs, r, decode_motifs);
+//		sort(decode_motifs.begin(), decode_motifs.end(), Motif());
+//
+//		print_decoded_read(decode_motifs, r, out);
 	} while (in);
 
 	return ReadStats{ntotal, nmapped};
@@ -431,6 +450,7 @@ int main(int argc, char *argv[]) {
 	Motif best_qmotif;
 	auto start = chrono::system_clock::now();
 	vector<tuple<string, int, int>> stats;
+
 	for (const string &rf : vm["read"].as<vector<string>>()) {
 		auto[ntotal, nmapped] = decode_reads(mmotifs, rf, ofile.is_open() ? ofile : cout);
 //		auto[ntotal, nmapped] = process_reads(mmotifs, qmotifs,
